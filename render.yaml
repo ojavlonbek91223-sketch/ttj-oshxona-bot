@@ -1,0 +1,23 @@
+# Render Blueprint: Render → New → Blueprint → shu repozitoriyni tanlang.
+# BOT_TOKEN va DATABASE_URL so'raladi (ular GitHub'ga yozilmaydi).
+services:
+  - type: web
+    name: ttj-oshxona-bot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEEKLY_FEE
+        value: "90000"
+      - key: WEEKLY_REPORT_HOUR
+        value: "20"
