@@ -238,6 +238,7 @@ brauzerda (http://localhost:8090) Telegram'siz ko'rish.
 ```
 docs/           — SERVERSIZ ilova (GitHub Pages): index.html, app.js (ekranlar),
                   logic.js (hisob-kitob), store.js (Telegram bulutiga saqlash), style.css
+brand/          — logotip: logo-qozon.svg (asl nusxa), .png/.jpg (bot rasmi, 640×640), boshqa variantlar
 tests/crosscheck.py — logic.js ni db.py + webserver.py bilan 1500 ta tasodifiy amalda solishtiradi (Node.js kerak)
 tests/store_test.js — bulutga saqlash: 2 yillik hajm, internet uzilishi, ikki qurilma (node tests/store_test.js)
 

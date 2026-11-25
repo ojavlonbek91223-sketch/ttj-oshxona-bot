@@ -214,3 +214,4 @@ textarea.input { min-height: 120px; resize: vertical; }
 }
 .copy-area { min-height: 50vh; font-size: 13px; }
 a.btn { display: block; text-align: center; text-decoration: none; }
+.top .logo { width: 36px; height: 36px; border-radius: 50%; flex: none; }
