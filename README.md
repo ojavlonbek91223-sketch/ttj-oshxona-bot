@@ -6,6 +6,37 @@ kim qarzdorligini ko'rsatadi va hisobotlarni chiqaradi.
 
 ---
 
+## 📱 Asosiy usul: serversiz ilova (hozir shu ishlaydi)
+
+Server kerak emas, pul to'lanmaydi, hech qachon "uxlab" qolmaydi.
+
+- **Ochish:** Telegram'da botni oching → chap pastdagi **«📱 Ochish»** tugmasi.
+- **Ilova sahifasi** GitHub Pages'da turadi (bepul): `docs/` papkasi →
+  https://ojavlonbek91223-sketch.github.io/ttj-oshxona-bot/
+- **Ma'lumotlar** ilovani ochgan odamning **Telegram akkauntida** (Telegram CloudStorage) saqlanadi.
+  Telefon almashsa yoki buzilsa ham yo'qolmaydi — shu akkaunt bilan botni ochish kifoya.
+  Kompyuterdagi Telegram'dan ham ochsa bo'ladi. Boshqa odam ochsa — u o'zining bo'sh daftarini ko'radi,
+  oshpazning ma'lumotini ko'ra olmaydi.
+- **Hisob-kitob** telefonning o'zida bajariladi (`docs/logic.js`); u server versiyasi bilan aynan bir xil
+  ishlashi `tests/crosscheck.py` bilan tekshirilgan.
+- **Sig'im:** Telegram har bir akkauntga 1024 ta yozuv × 4 KB beradi. 300 ta bolaning 2 yillik hisobi
+  ~20% joy oladi (`node tests/store_test.js`). Band joy ⚙️ Sozlama bo'limida ko'rinadi.
+
+**Cheklovlar:** ma'lumotni faqat bitta Telegram akkaunt yuritadi (ikkinchi admin yo'q); yakshanba
+hisoboti chatga o'zi kelmaydi — 📊 Hisobot bo'limida ko'rinadi, «📋 Nusxalash» bilan istalgan chatga
+yuborish mumkin; Excel fayl yo'q; bot `/start` kabi buyruqlarga javob bermaydi (hamma ish ilovada).
+
+**Ilovani yangilash:** `docs/` dagi fayllarni o'zgartirib GitHub'ga yuklash kifoya — 1–2 daqiqada yangilanadi.
+`index.html` dagi `?v=` raqamini oshiring (telefon eski nusxani eslab qolmasligi uchun).
+
+**Kompyuterda sinash:** `python -m http.server 8095 --directory docs` → http://localhost:8095
+(Telegram'siz «SINOV REJIMI»: ma'lumot faqat shu brauzerda).
+
+> Quyidagi bo'limlar — server bilan ishlaydigan **chat-bot versiyasi** (ixtiyoriy, kelajak uchun).
+> Uning ma'lumotlari serversiz ilova bilan umumiy emas.
+
+---
+
 ## Bot nima qila oladi
 
 | Menyu tugmasi | Nima qiladi |
@@ -205,6 +236,11 @@ brauzerda (http://localhost:8090) Telegram'siz ko'rish.
 ## Dasturchi uchun
 
 ```
+docs/           — SERVERSIZ ilova (GitHub Pages): index.html, app.js (ekranlar),
+                  logic.js (hisob-kitob), store.js (Telegram bulutiga saqlash), style.css
+tests/crosscheck.py — logic.js ni db.py + webserver.py bilan 1500 ta tasodifiy amalda solishtiradi (Node.js kerak)
+tests/store_test.js — bulutga saqlash: 2 yillik hajm, internet uzilishi, ikki qurilma (node tests/store_test.js)
+
 bot.py          — ishga tushirish, dispatcher
 config.py       — .env sozlamalari
 db.py           — baza (SQLite yoki Postgres): etajlar, bolalar, to'lovlar, ozod haftalar, xarajatlar, qarz hisobi

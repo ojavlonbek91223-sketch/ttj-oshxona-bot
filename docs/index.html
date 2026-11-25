@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Oshxona hisobi</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+  <div class="dev-banner hidden" id="dev-banner">SINOV REJIMI — ma'lumot faqat shu brauzerda</div>
+  <header class="top">
+    <div class="grow">
+      <div class="top-title" id="top-title">Oshxona hisobi</div>
+      <div class="top-sub" id="top-sub">Yuklanmoqda…</div>
+    </div>
+    <button class="sync saved" id="sync" type="button" aria-live="polite"></button>
+    <button class="icon-btn" id="refresh" aria-label="Bulutdan yangilash">⟳</button>
+  </header>
+
+  <main id="view"><div class="empty">Yuklanmoqda…</div></main>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="pay" class="active"><span class="ti">💵</span><span>To'lov</span></button>
+    <button data-tab="exp"><span class="ti">🛒</span><span>Xarajat</span></button>
+    <button data-tab="rep"><span class="ti">📊</span><span>Hisobot</span></button>
+    <button data-tab="kids"><span class="ti">👥</span><span>Bolalar</span></button>
+    <button data-tab="set"><span class="ti">⚙️</span><span>Sozlama</span></button>
+  </nav>
+
+  <div class="sheet-bg hidden" id="sheet-bg"></div>
+  <section class="sheet hidden" id="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheet-title"></div>
+      <button class="icon-btn" id="sheet-close" aria-label="Yopish">✕</button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </section>
+
+  <div class="toast hidden" id="toast"><span id="toast-text"></span><button id="toast-undo" class="hidden">Bekor qilish</button></div>
+
+  <script src="logic.js?v=4"></script>
+  <script src="store.js?v=4"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>
