@@ -22,6 +22,14 @@ Server kerak emas, pul to'lanmaydi, hech qachon "uxlab" qolmaydi.
 - **Sig'im:** Telegram har bir akkauntga 1024 ta yozuv × 4 KB beradi. 300 ta bolaning 2 yillik hisobi
   ~20% joy oladi (`node tests/store_test.js`). Band joy ⚙️ Sozlama bo'limida ko'rinadi.
 
+**To'lov qoidalari va nazorat:**
+- Bir bolaga **bir haftada bitta to'lov** qabul qilinadi. Xato bo'lsa — o'sha to'lov ✏️ o'zgartiriladi yoki 🗑 o'chiriladi.
+- To'lov yozish, o'zgartirish va o'chirishdan oldin ilova **«Ha / Bekor qilish»** deb so'raydi.
+- Har bir to'lov, o'zgartirish va o'chirish **sana-vaqti va qaysi qurilmadan** qilingani bilan saqlanadi
+  (o'chirilgani ham yo'qolmaydi): 📊 Hisobot → **📜 O'zgarishlar tarixi**. Boshqa telefon yoki kompyuterdan
+  qilingan amallar qizil «boshqa qurilma» belgisi bilan ajralib turadi. Bu qurilmaning nomi ⚙️ Sozlama'da.
+- **Ko'rinish:** ☀️ kunduzgi (oq) / 🌙 tungi / Telegram kabi — tepadagi tugma yoki ⚙️ Sozlama.
+
 **Cheklovlar:** ma'lumotni faqat bitta Telegram akkaunt yuritadi (ikkinchi admin yo'q); yakshanba
 hisoboti chatga o'zi kelmaydi — 📊 Hisobot bo'limida ko'rinadi, «📋 Nusxalash» bilan istalgan chatga
 yuborish mumkin; Excel fayl yo'q; bot `/start` kabi buyruqlarga javob bermaydi (hamma ish ilovada).
@@ -240,6 +248,7 @@ docs/           — SERVERSIZ ilova (GitHub Pages): index.html, app.js (ekranlar
                   logic.js (hisob-kitob), store.js (Telegram bulutiga saqlash), style.css
 brand/          — logotip: logo-qozon.svg (asl nusxa), .png/.jpg (bot rasmi, 640×640), boshqa variantlar
 tests/crosscheck.py — logic.js ni db.py + webserver.py bilan 1500 ta tasodifiy amalda solishtiradi (Node.js kerak)
+tests/logic_test.js — haftada bitta to'lov, to'lovni o'zgartirish/o'chirish tarixi, qurilma (node tests/logic_test.js)
 tests/store_test.js — bulutga saqlash: 2 yillik hajm, internet uzilishi, ikki qurilma (node tests/store_test.js)
 
 bot.py          — ishga tushirish, dispatcher

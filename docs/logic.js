@@ -171,15 +171,17 @@
   }
 
   // ------------------------------------------------------------ baza
-  function createDb() {
+  /** onePaymentPerWeek: bir bolaga bir haftada bitta to'lov (server versiyasida bu qoida yo'q edi). */
+  function createDb({ onePaymentPerWeek = true } = {}) {
     let D;
     let onChange = () => {};
     let user = { id: 0, name: '' };
+    let device = '';   // shu qurilma belgisi: platforma harfi + tasodifiy kod (masalan "a3f9k")
 
     function empty() {
       return {
         cash: 0, fees: [[FIRST_WEEK, DEFAULT_FEE]], floors: [], students: [], seqF: 0, seqS: 0,
-        pay: new Map(), exp: new Map(), payLog: [], expLog: [], maxP: 0, maxE: 0,
+        pay: new Map(), exp: new Map(), payLog: [], expLog: [], maxP: 0, maxE: 0, events: [],
       };
     }
     D = empty();
@@ -190,7 +192,7 @@
       const d = empty();
       if (st && st.c) {
         const o = JSON.parse(st.c);
-        if (o.v !== 1) throw new Error("Ma'lumot yangi versiyada saqlangan — ilovani yangilang");
+        if (o.v !== 1 && o.v !== 2) throw new Error("Ma'lumot yangi versiyada saqlangan — ilovani yangilang");
         d.cash = o.cash || 0;
         d.fees = o.fees;
         [d.seqF, d.seqS] = o.seq;
@@ -198,28 +200,65 @@
         d.students = o.st.map(([id, name, fid, room, phone, jw, lw, act, od, ex]) =>
           ({ id, name, fid, room, phone, jw, lw, act: !!act, od, ex }));
       }
-      for (const line of lines(st && st.p)) {
-        d.payLog.push(line);
-        if (line[0] === '-') { d.pay.delete(+line.slice(1)); continue; }
-        const [id, sid, amt, t] = line.split(',');
-        const p = { id: +id, sid: +sid, amt: +amt, at: unpackTime(t) };
-        d.pay.set(p.id, p);
-        if (p.id > d.maxP) d.maxP = p.id;
-      }
-      for (const line of lines(st && st.e)) {
-        d.expLog.push(line);
-        if (line[0] === '-') { d.exp.delete(+line.slice(1)); continue; }
-        const [id, cat, amt, spent, desc] = JSON.parse(line);
-        d.exp.set(id, { id, cat, amt, spent, desc });
-        if (id > d.maxE) d.maxE = id;
-      }
+      for (const line of lines(st && st.p)) { d.payLog.push(line); applyPay(d, line); }
+      for (const line of lines(st && st.e)) { d.expLog.push(line); applyExp(d, line); }
       D = d;
     }
+
+    /* To'lovlar jurnali — har qator bitta voqea (o'chirilgan/o'zgartirilgani ham saqlanib qoladi):
+     *   id,bola,summa,vaqt[,qurilma]     — yangi to'lov
+     *   ~id,yangi_summa,vaqt[,qurilma]   — summa o'zgartirildi
+     *   -id[,vaqt[,qurilma]]             — o'chirildi
+     * Yuklashda ham, yangi amalda ham shu funksiya ishlaydi — natija doim bir xil. */
+    function applyPay(d, line) {
+      const f = line.split(',');
+      if (line[0] === '-' || line[0] === '~') {
+        const id = +f[0].slice(1);
+        const p = d.pay.get(id);
+        if (!p) return;
+        if (line[0] === '-') {
+          d.pay.delete(id);
+          d.events.push({ k: 'pdel', s: 'p', n: d.payLog.length, id, sid: p.sid, amt: p.amt, pat: p.at, at: f[1] ? unpackTime(f[1]) : null, dev: f[2] || '' });
+        } else {
+          const ev = { k: 'pedit', s: 'p', n: d.payLog.length, id, sid: p.sid, amt: +f[1], old: p.amt, pat: p.at, at: unpackTime(f[2]), dev: f[3] || '' };
+          d.events.push(ev);
+          p.edits.push(ev);
+          p.amt = ev.amt;
+        }
+        return;
+      }
+      const p = { id: +f[0], sid: +f[1], amt: +f[2], at: unpackTime(f[3]), dev: f[4] || '', edits: [] };
+      d.pay.set(p.id, p);
+      d.events.push({ k: 'padd', s: 'p', n: d.payLog.length, id: p.id, sid: p.sid, amt: p.amt, at: p.at, dev: p.dev });
+      if (p.id > d.maxP) d.maxP = p.id;
+    }
+
+    /* Xarajatlar jurnali: [id,"toifa",summa,"sana","izoh",vaqt,qurilma]  yoki  -id[,vaqt[,qurilma]] */
+    function applyExp(d, line) {
+      if (line[0] === '-') {
+        const f = line.split(',');
+        const id = +f[0].slice(1);
+        const e = d.exp.get(id);
+        if (!e) return;
+        d.exp.delete(id);
+        d.events.push({ k: 'edel', s: 'e', n: d.expLog.length, id, cat: e.cat, amt: e.amt, spent: e.spent, desc: e.desc,
+          at: f[1] ? unpackTime(f[1]) : null, dev: f[2] || '' });
+        return;
+      }
+      const [id, cat, amt, spent, desc, t, dev] = JSON.parse(line);
+      d.exp.set(id, { id, cat, amt, spent, desc });
+      d.events.push({ k: 'eadd', s: 'e', n: d.expLog.length, id, cat, amt, spent, desc, at: t ? unpackTime(t) : null, dev: dev || '' });
+      if (id > d.maxE) d.maxE = id;
+    }
+
+    const devTail = () => (device ? ',' + device : '');
+    function logPay(line) { D.payLog.push(line); applyPay(D, line); }
+    function logExp(line) { D.expLog.push(line); applyExp(D, line); }
 
     function streams() {
       return {
         c: JSON.stringify({
-          v: 1, cash: D.cash, fees: D.fees,
+          v: 2, cash: D.cash, fees: D.fees,
           fl: D.floors.map(f => [f.id, f.name, f.sort]),
           seq: [D.seqF, D.seqS],
           st: D.students.map(s => [s.id, s.name, s.fid, s.room, s.phone, s.jw, s.lw, s.act ? 1 : 0, s.od, s.ex]),
@@ -292,12 +331,26 @@
       return out;
     }
 
-    function studentJson(s, b, fee, fl) {
+    /** Har bola uchun shu haftadagi oxirgi to'lov (haftada bitta to'lov qoidasi uchun). */
+    function weekPayments() {
+      const ws = weekStart();
+      const out = new Map();
+      for (const p of D.pay.values()) {
+        if (p.at < ws) continue;
+        const cur = out.get(p.sid);
+        if (!cur || p.at > cur.at || (p.at === cur.at && p.id > cur.id)) out.set(p.sid, p);
+      }
+      return out;
+    }
+    const payBrief = p => (p ? { id: p.id, amount: p.amt, at: fmtDt(p.at), dev: p.dev, edited: p.edits.length > 0 } : null);
+
+    function studentJson(s, b, fee, fl, wp) {
       return {
         id: s.id, name: s.name, floor_id: s.fid, floor: fl.get(s.fid).name,
         room: s.room, phone: s.phone, active: s.act,
         debt: b.debt, paid: b.paid, paid_week: b.paid_week, exempt: b.exempt_now,
         status: s.act ? statusOf(b, fee) : 'left', opening_debt: s.od,
+        week_pay: payBrief(wp && wp.get(s.id)),
       };
     }
 
@@ -335,13 +388,14 @@
       const fee = currentFee();
       const bals = balances();
       const fl = floorsMap();
+      const wp = weekPayments();
       return {
         me: { id: user.id, name: user.name },
         week: weekLabel(weekStart()),
         fee,
         next_fee: nextFee(),
         floors: listFloors(),
-        students: listStudents(null, null).map(s => studentJson(s, bals.get(s.id), fee, fl)),
+        students: listStudents(null, null).map(s => studentJson(s, bals.get(s.id), fee, fl, wp)),
         categories: CATEGORIES.slice(),
         counts: statusCounts(bals, fee),
       };
@@ -350,12 +404,17 @@
     // ---------- bolalar va to'lovlar ----------
     function getStudent(sidRaw) {
       const s = studentOr404(toInt(sidRaw));
-      const data = studentJson(s, balances().get(s.id), currentFee(), floorsMap());
+      const data = studentJson(s, balances().get(s.id), currentFee(), floorsMap(), weekPayments());
       data.joined = weekLabel(s.jw);
       data.left = s.lw ? weekLabel(s.lw) : null;
       const pays = [...D.pay.values()].filter(p => p.sid === s.id)
         .sort((a, b) => cmp(b.at, a.at) || b.id - a.id);
-      data.payments = pays.slice(0, 50).map(p => ({ id: p.id, amount: p.amt, at: fmtDt(p.at), note: null }));
+      data.payments = pays.slice(0, 50).map(p => ({
+        id: p.id, amount: p.amt, at: fmtDt(p.at), note: null, dev: p.dev,
+        edits: p.edits.map(e => ({ old: e.old, amount: e.amt, at: fmtDt(e.at), dev: e.dev })),
+      }));
+      data.removed = D.events.filter(e => e.k === 'pdel' && e.sid === s.id).reverse().slice(0, 20)
+        .map(e => ({ amount: e.amt, paid_at: fmtDt(e.pat), at: e.at ? fmtDt(e.at) : '', dev: e.dev }));
       data.exemptions = s.ex.slice().sort().map(weekLabel).slice(-10);
       data.can_delete = pays.length === 0;
       return data;
@@ -364,24 +423,69 @@
     function pay(b) {
       const s = studentOr404(toInt(b.student_id));
       const amount = amountArg(b.amount);
+      if (onePaymentPerWeek) {
+        const prev = weekPayments().get(s.id);
+        if (prev) {
+          throw new ApiError(`${s.name} bu hafta to'lagan: ${num(prev.amt)} so'm (${fmtDt(prev.at)}). `
+            + "Bir haftada bitta to'lov. Xato bo'lsa — o'sha to'lovni o'zgartiring.", 409);
+        }
+      }
       const since = fmtWall(wallDate(clock() - 4000));
       for (const p of D.pay.values()) {
         if (p.sid === s.id && p.amt === amount && p.at >= since) throw new ApiError("Bu to'lov hozirgina yozildi", 409);
       }
-      const id = ++D.maxP;
+      const id = D.maxP + 1;
       const at = nowStr();
-      D.pay.set(id, { id, sid: s.id, amt: amount, at });
-      D.payLog.push(`${id},${s.id},${amount},${packTime(at)}`);
-      return { payment_id: id, name: s.name, amount, debt: balances().get(s.id).debt };
+      logPay(`${id},${s.id},${amount},${packTime(at)}${devTail()}`);
+      return { payment_id: id, name: s.name, amount, debt: balances().get(s.id).debt, at: fmtDt(at) };
+    }
+
+    function editPayment(pidRaw, b) {
+      const p = D.pay.get(toInt(pidRaw));
+      if (!p) throw new ApiError("To'lov topilmadi", 404);
+      const s = studentOr404(p.sid);
+      const amount = amountArg(b.amount);
+      if (amount === p.amt) throw new ApiError("Summa o'zgarmadi");
+      const old = p.amt;
+      logPay(`~${p.id},${amount},${packTime(nowStr())}${devTail()}`);
+      return { ok: true, name: s.name, old, amount, debt: balances().get(s.id).debt };
     }
 
     function deletePayment(pidRaw) {
       const p = D.pay.get(toInt(pidRaw));
       if (!p) throw new ApiError("To'lov topilmadi", 404);
       const s = studentOr404(p.sid);
-      D.pay.delete(p.id);
-      D.payLog.push('-' + p.id);
-      return { ok: true, name: s.name, amount: p.amt };
+      const amount = p.amt;
+      logPay(`-${p.id},${packTime(nowStr())}${devTail()}`);
+      return { ok: true, name: s.name, amount };
+    }
+
+    /** O'zgarishlar tarixi: to'lov va xarajatlar — qo'shilgan, o'zgartirilgan, o'chirilgan. Yangisi birinchi. */
+    function getJournal(q) {
+      const only = q.only === 'fix';
+      const limit = Math.min(Math.max(toInt(q.limit === undefined ? '100' : q.limit, 'son'), 1), 500);
+      const names = new Map(D.students.map(s => [s.id, s.name]));
+      const items = [];
+      // vaqt bo'yicha (yangisi birinchi); vaqti yo'q eski yozuvlar — to'lov/xarajat sanasi bo'yicha
+      const when = e => e.at || e.pat || (e.spent ? e.spent + ' 00:00:00' : '');
+      const sorted = D.events.slice().sort((a, b) => cmp(when(b), when(a)) || cmp(a.s, b.s) || b.n - a.n);
+      for (const e of sorted) {
+        if (items.length >= limit) break;
+        if (only && (e.k === 'padd' || e.k === 'eadd')) continue;
+        const it = { k: e.k, at: e.at ? fmtDt(e.at) : '', amount: e.amt, dev: e.dev };
+        if (e.k[0] === 'p') {
+          it.name = names.get(e.sid) || '—';
+          if (e.k !== 'padd') it.paid_at = fmtDt(e.pat);
+          if (e.k === 'pedit') it.old = e.old;
+        } else {
+          it.name = e.cat;
+          it.desc = e.desc;
+          it.spent = fmtDate(e.spent);
+        }
+        items.push(it);
+      }
+      const fixes = D.events.filter(e => e.k === 'pedit' || e.k === 'pdel' || e.k === 'edel').length;
+      return { items, total: only ? fixes : D.events.length, fixes };
     }
 
     function toggleExempt(b) {
@@ -532,17 +636,15 @@
         }
       }
       const desc = cpSlice(String(b.description || '').trim(), 200) || null;
-      const id = ++D.maxE;
-      D.exp.set(id, { id, cat: category, amt: amount, spent, desc });
-      D.expLog.push(JSON.stringify([id, category, amount, spent, desc]));
+      const id = D.maxE + 1;
+      logExp(JSON.stringify([id, category, amount, spent, desc, packTime(nowStr()), device]));
       return { id };
     }
 
     function deleteExpense(eidRaw) {
       const e = D.exp.get(toInt(eidRaw));
       if (!e) throw new ApiError('Xarajat topilmadi', 404);
-      D.exp.delete(e.id);
-      D.expLog.push('-' + e.id);
+      logExp(`-${e.id},${packTime(nowStr())}${devTail()}`);
       return { ok: true };
     }
 
@@ -676,6 +778,8 @@
       ['POST', /^\/students$/, (m, b) => addStudents(b)],
       ['POST', /^\/pay$/, (m, b) => pay(b)],
       ['DELETE', /^\/payment\/([^/]+)$/, m => deletePayment(m[1])],
+      ['PATCH', /^\/payment\/([^/]+)$/, (m, b) => editPayment(m[1], b)],
+      ['GET', /^\/journal$/, (m, b, q) => getJournal(q)],
       ['POST', /^\/exempt$/, (m, b) => toggleExempt(b)],
       ['POST', /^\/floors$/, (m, b) => addFloors(b)],
       ['PATCH', /^\/floor\/([^/]+)$/, (m, b) => renameFloor(m[1], b)],
@@ -718,12 +822,20 @@
       api, load, streams, debtorsText, reportText,
       setOnChange: fn => { onChange = fn || (() => {}); },
       setUser: u => { user = { id: u && u.id || 0, name: (u && u.name) || '' }; },
+      setDevice: code => { device = /^[a-z0-9]{1,12}$/.test(code || '') ? code : ''; },
       counts: () => ({ floors: D.floors.length, students: D.students.length, payments: D.pay.size, expenses: D.exp.size }),
     };
   }
 
+  const PLATFORM = { a: '📱 Android', i: '📱 iPhone', d: '💻 Kompyuter', m: '💻 Mac', w: '🌐 Veb' };
+  /** "a3f9k" -> "📱 Android 3F9K" — qaysi qurilmadan kiritilgani. */
+  function deviceLabel(code) {
+    if (!code) return '';
+    return `${PLATFORM[code[0]] || '📱 Qurilma'} ${code.slice(1).toUpperCase()}`.trim();
+  }
+
   return {
-    createDb, ApiError, CATEGORIES,
+    createDb, ApiError, CATEGORIES, deviceLabel,
     setClock: fn => { clock = fn || (() => Date.now()); },
     _t: { parseAmount, parseStudentLine, floorName, cleanRoom, weekStart, weekLabel, addMonths, monthLabel, packTime, unpackTime, num },
   };

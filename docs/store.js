@@ -213,7 +213,7 @@
       const remote = await readRoot();
       if ((remote ? remote.cid : '') !== cid) return 0;
       const keys = await backend.keys();
-      const orphans = keys.filter(k => k !== 'root' && !known.has(k));
+      const orphans = keys.filter(k => k !== 'root' && !k.startsWith('ui_') && !known.has(k));   // ui_* — ko'rinish sozlamalari
       let seen = {};
       try { seen = JSON.parse((kv && kv.getItem('osh_gc')) || '{}') || {}; } catch (e) { /* bo'sh */ }
       const t = now(), ripe = [], keep = {};

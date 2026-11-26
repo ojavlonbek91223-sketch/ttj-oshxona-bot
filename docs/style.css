@@ -215,3 +215,35 @@ textarea.input { min-height: 120px; resize: vertical; }
 .copy-area { min-height: 50vh; font-size: 13px; }
 a.btn { display: block; text-align: center; text-decoration: none; }
 .top .logo { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+
+/* ---------- ko'rinish: kunduzgi (oq) / tungi — Telegram mavzusidan qat'i nazar ---------- */
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2f2f7; --card: #ffffff; --text: #111111; --hint: #6d6d72; --link: #2481cc;
+  --btn: #2481cc; --btn-text: #ffffff; --sep: rgba(0, 0, 0, .12); --soft: rgba(0, 0, 0, .06);
+  --ok: #1f9d55; --part: #b87400; --bad: #d93a3f; --gray: #8a8a8e;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #000000; --card: #1c1c1e; --text: #f2f2f2; --hint: #98989f; --link: #5eb5f7;
+  --btn: #3e88d6; --btn-text: #ffffff; --sep: rgba(255, 255, 255, .12); --soft: rgba(255, 255, 255, .08);
+  --ok: #3ccf7a; --part: #f0b429; --bad: #ff6369; --gray: #98989f;
+}
+.seg.seg3 { grid-template-columns: 1fr 1fr 1fr; margin-bottom: 0; }
+.seg.seg3 button { font-size: 13px; padding: 8px 4px; }
+
+/* ---------- to'lov: haftada bitta, tuzatishlar tarixi ---------- */
+.paid-chip {
+  flex: none; font-size: 13px; font-weight: 700; color: var(--ok);
+  background: rgba(31, 157, 85, .14); background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border-radius: 999px; padding: 4px 9px;
+}
+.paid-box { border-radius: 12px; padding: 10px 12px; background: rgba(31, 157, 85, .12); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.paid-box .name { color: var(--ok); font-weight: 700; }
+.other-dev { color: var(--bad); font-weight: 600; }
+.sub.fix { color: var(--part); }
+.item.removed .name, .item.removed .sub { opacity: .7; }
+.fixrow { background: rgba(212, 138, 0, .08); background: color-mix(in srgb, var(--part) 8%, transparent); }
+.top { gap: 6px; padding: 10px 12px; }
+.top-title, .top-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .icon-btn { width: 34px; height: 34px; font-size: 16px; }

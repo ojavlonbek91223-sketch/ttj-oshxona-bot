@@ -61,7 +61,7 @@ async function volume() {
   check(same(data, db.streams()), "yangi qurilmada yuklangan ma'lumot aynan bir xil");
 
   // bitta to'lov — nechta yozuv?
-  now += MIN;
+  now += 7 * DAY;   // yangi hafta (haftada bitta to'lov)
   db.api('POST', '/pay', { student_id: sids[5], amount: 90000 });
   const r = await store.commit(db.streams());
   console.log(`   bitta to'lov: ${r.writes} ta yangi bo'lak + root, ${r.removed} ta eski o'chirildi`);
@@ -81,6 +81,7 @@ async function crash() {
 
   // yangi o'zgarishlar: ko'p bo'lak o'zgaradi (bola nomlari + to'lovlar + xarajat)
   for (let i = 1; i <= 120; i += 3) db.api('PATCH', `/student/${i}`, { name: `Yangi Nom ${i}` });
+  now += 7 * DAY;   // keyingi hafta (haftada bitta to'lov)
   for (let i = 1; i <= 120; i++) { now += 5000; db.api('POST', '/pay', { student_id: i, amount: 45000 }); }
   db.api('POST', '/expenses', { category: L.CATEGORIES[0], amount: 500000 });
 
@@ -154,7 +155,7 @@ async function sync() {
   check(statuses.filter(s => s === 'saving').length === 1, "5 ta tez o'zgarish bitta saqlashga yig'ildi");
 
   backend.setFailAfter(0);                 // internet yo'q
-  now += 5000; db.api('POST', '/pay', { student_id: 1, amount: 1000 });
+  now += 7 * DAY; db.api('POST', '/pay', { student_id: 1, amount: 1000 });
   await new Promise(r => setTimeout(r, 80));
   check(statuses.includes('error') && sy.pending(), 'internet yo\'q: xato ko\'rsatildi, o\'zgarish kutmoqda');
   backend.setFailAfter(Infinity);          // internet qaytdi
