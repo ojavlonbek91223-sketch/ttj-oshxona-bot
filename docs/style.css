@@ -55,7 +55,7 @@ main { padding: 0 12px 12px; max-width: 720px; margin: 0 auto; }
 /* ---------- tabs ---------- */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   background: var(--card); border-top: 1px solid var(--sep);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -247,3 +247,47 @@ html[data-theme="dark"] {
 .top { gap: 6px; padding: 10px 12px; }
 .top-title, .top-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .icon-btn { width: 34px; height: 34px; font-size: 16px; }
+
+/* ---------- ovqat: kuniga ikki mahal ---------- */
+.tabs button { min-width: 0; font-size: 10.5px; }
+.tabs button > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meal-head { padding: 10px 12px 12px; }
+.meal-head .period { margin-bottom: 8px; }
+.mday { text-align: center; min-width: 0; }
+.mday b { font-size: 17px; }
+.meal-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.meal-sum > div { background: var(--soft); border-radius: 10px; padding: 8px 10px; }
+.meal-sum span { display: block; font-size: 12px; color: var(--hint); }
+.meal-sum b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.meal-sum i { font-style: normal; color: var(--ok); }
+.meal-sum em { font-style: normal; font-size: 14px; color: var(--hint); font-weight: 600; }
+.mcols { display: flex; gap: 6px; }
+.mcols i { width: 46px; text-align: center; font-style: normal; font-size: 11px; font-weight: 600; }
+.meal-row { padding: 8px 10px 8px 14px; gap: 6px; }
+.mbtn {
+  flex: none; width: 46px; height: 42px; border-radius: 12px; cursor: pointer;
+  border: 1.5px dashed var(--sep); background: transparent; color: var(--hint);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
+}
+.mbtn b { font-size: 20px; font-weight: 700; }
+.mbtn small { font-size: 10px; margin-top: 1px; opacity: .8; }
+.mbtn.on { border: 1.5px solid var(--ok); background: var(--ok); color: #fff; }
+.mbtn:active { transform: scale(.94); }
+.note {
+  background: rgba(212, 138, 0, .12); background: color-mix(in srgb, var(--part) 13%, transparent);
+  border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; font-size: 13.5px;
+}
+.link { border: 0; background: none; padding: 0; color: var(--link); font-weight: 600; cursor: pointer; text-decoration: underline; }
+.mgrid { display: grid; grid-template-columns: 30px repeat(7, 1fr); gap: 4px; align-items: center; }
+.mg-h { text-align: center; font-size: 12px; color: var(--hint); font-weight: 600; line-height: 1.15; }
+.mg-h small { display: block; font-weight: 400; }
+.mg-h.today { color: var(--btn); }
+.mg-l { font-size: 11px; color: var(--hint); font-weight: 600; }
+.mg-c {
+  height: 34px; border-radius: 9px; border: 1.5px dashed var(--sep); background: transparent;
+  color: var(--hint); font-size: 15px; font-weight: 700; cursor: pointer; padding: 0;
+}
+.mg-c.on { border: 0; background: var(--ok); color: #fff; }
+.mg-c.late { border: 0; background: var(--part); color: #fff; }
+.mg-c.off { border: 0; background: var(--soft); opacity: .5; cursor: default; }
+.late-key { display: inline-block; background: var(--part); color: #fff; border-radius: 5px; padding: 0 5px; font-weight: 700; }

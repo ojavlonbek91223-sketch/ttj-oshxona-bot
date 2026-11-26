@@ -25,11 +25,12 @@ function canon(v) {
 function normalize(p, res) {
   const r = JSON.parse(JSON.stringify(res));
   // faqat serversiz versiyada bor maydonlar (vaqt, qurilma, tuzatishlar tarixi)
-  const dropExtra = s => { delete s.week_pay; delete s.removed; for (const x of s.payments || []) { delete x.dev; delete x.edits; } };
+  const dropExtra = s => { delete s.week_pay; delete s.removed; delete s.meals; for (const x of s.payments || []) { delete x.dev; delete x.edits; } };
   if (p === '/state') { delete r.me; (r.students || []).forEach(dropExtra); }
   if (p.startsWith('/student/')) dropExtra(r);
   if (p === '/pay') delete r.at;
   if (p === '/settings') { delete r.admins; delete r.me; }
+  if (p.startsWith('/report')) delete r.meals;   // ovqat hisobi faqat serversiz versiyada
   if (p.startsWith('/report') && r.by_cat) {
     r.by_cat.sort((a, b) => b.total - a.total || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }

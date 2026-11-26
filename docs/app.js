@@ -15,7 +15,7 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const view = $('#view');
-  const S = { tab: 'pay', st: null, floor: 'all', filter: 'all', q: '', rep: { k: 'w', o: 0 },
+  const S = { tab: 'meal', mday: null, md: null, st: null, floor: 'all', filter: 'all', q: '', rep: { k: 'w', o: 0 },
               expCat: null, openId: null, feeWhen: 'now', sync: 'synced', savedAt: null, user: null,
               theme: 'auto', device: '', jr: { only: false, limit: 100 } };
   let db, store, sync, mirror, backend;
@@ -72,6 +72,7 @@
     : ` · <span class="other-dev">${esc(devLabel(code))} (boshqa qurilma)</span>`);
 
   function haptic(type) { try { if (tgAtLeast('6.1')) tg.HapticFeedback.notificationOccurred(type); } catch (e) {} }
+  function tapFeel() { try { if (tgAtLeast('6.1')) tg.HapticFeedback.impactOccurred('light'); } catch (e) {} }
 
   /** Server versiyasidagi API bilan bir xil, lekin hammasi telefonda hisoblanadi. */
   async function api(method, path, body) {
@@ -247,7 +248,121 @@
 
   function render() {
     if (!S.st) return;
-    ({ pay: renderPay, exp: renderExp, rep: renderRep, kids: renderKids, set: renderSet })[S.tab]();
+    ({ meal: renderMeal, pay: renderPay, exp: renderExp, rep: renderRep, kids: renderKids, set: renderSet })[S.tab]();
+  }
+
+  const WELCOME = `<div class="card"><h3>👋 Xush kelibsiz!</h3>
+    <p class="hint">Boshlash uchun «Bolalar» bo'limida avval etajlarni, keyin bolalarni qo'shing.</p>
+    <p class="hint">Ma'lumotlar sizning Telegram akkauntingizda saqlanadi — telefon almashsa ham yo'qolmaydi.</p>
+    <button class="btn" data-act="gotab" data-tab="kids">👥 Bolalar bo'limiga o'tish</button></div>`;
+
+  // ------------------------------------------------------------ 🍽 OVQAT: kuniga ikki mahal "+"
+  function mealStudents() {
+    const q = S.q.trim().toLowerCase();
+    return S.st.students.filter(s => s.active
+      && (S.floor === 'all' || s.floor_id === S.floor)
+      && (!q || s.name.toLowerCase().includes(q) || (s.room || '').toLowerCase() === q));
+  }
+
+  const mealBtn = (sid, m, on) => `<button class="mbtn${on ? ' on' : ''}" data-act="meal" data-id="${sid}" data-m="${m}" `
+    + `aria-pressed="${on ? 'true' : 'false'}" aria-label="${m}-mahal"><b>${on ? '✓' : '+'}</b><small>${m}</small></button>`;
+
+  function mealRow(s) {
+    const mask = S.md.marks[s.id] || 0;
+    const st = s.status === 'bad' || s.status === 'part' ? `<span class="${s.status}">${STATUS_TXT[s.status]}</span>` : STATUS_TXT[s.status];
+    return `<div class="item meal-row" data-act="open" data-id="${s.id}"><span class="dot ${s.status}"></span>`
+      + `<div class="grow"><div class="name">${esc(s.name)}</div><div class="sub">${s.room ? esc(s.room) + '-xona · ' : ''}${st}</div></div>`
+      + mealBtn(s.id, 1, mask & 1) + mealBtn(s.id, 2, mask & 2) + '</div>';
+  }
+
+  function mealList() {
+    const list = mealStudents();
+    if (!list.length) return `<div class="empty">${S.q ? 'Hech kim topilmadi' : "Bu etajda hali bola yo'q"}</div>`;
+    const groups = [];
+    for (const s of list) {
+      const g = groups[groups.length - 1];
+      if (g && g.id === s.floor_id) g.items.push(s);
+      else groups.push({ id: s.floor_id, name: s.floor, items: [s] });
+    }
+    return groups.map(g => `<div class="list"><div class="group-head"><span>${esc(g.name)} · ${g.items.length} ta</span>`
+      + '<span class="mcols"><i>1-mahal</i><i>2-mahal</i></span></div>'
+      + g.items.map(mealRow).join('') + '</div>').join('');
+  }
+
+  function mealSums() {
+    const d = S.md;
+    $('#msum1').textContent = d.m1;
+    $('#msum2').textContent = d.m2;
+  }
+
+  async function renderMeal() {
+    const st = S.st;
+    if (!st.floors.length) { view.innerHTML = WELCOME; return; }
+    let d;
+    try { d = await api('GET', `/meals${S.mday ? '?d=' + S.mday : ''}`); } catch (e) { showError(e); return; }
+    S.md = d;
+    if (d.rel === 'Bugun') S.mday = null;
+    if (S.tab !== 'meal') return;
+    const title = d.rel || esc(d.short);
+    view.innerHTML = `
+      <div class="card meal-head">
+        <div class="period">
+          <button class="icon-btn" data-act="mday" data-d="${d.prev || ''}" aria-label="Oldingi kun" ${d.prev ? '' : 'style="visibility:hidden"'}>◀</button>
+          <div class="mday"><b>${title}</b><div class="hint">${esc(d.label)}</div></div>
+          <button class="icon-btn" data-act="mday" data-d="${d.next || ''}" aria-label="Keyingi kun" ${d.next ? '' : 'style="visibility:hidden"'}>▶</button>
+        </div>
+        <div class="meal-sum">
+          <div><span>1-mahal berildi</span><b><i id="msum1">${d.m1}</i> <em>/ ${d.active}</em></b></div>
+          <div><span>2-mahal berildi</span><b><i id="msum2">${d.m2}</i> <em>/ ${d.active}</em></b></div>
+        </div>
+      </div>
+      ${d.rel === 'Bugun' ? '' : `<div class="note">⏪ <b>O'tgan kun.</b> Bu yerda qo'yilgan «+» keyin yozilgan deb, vaqti va qurilmasi bilan saqlanadi.
+        <button class="link" data-act="mday" data-d="">Bugunga qaytish</button></div>`}
+      <input class="input search" id="q" type="search" placeholder="🔍 Ism yoki xona raqami" value="${esc(S.q)}">
+      <div class="chips">
+        <button class="chip ${S.floor === 'all' ? 'sel' : ''}" data-act="floor" data-id="all">Hammasi</button>
+        ${st.floors.map(f => `<button class="chip ${S.floor === f.id ? 'sel' : ''}" data-act="floor" data-id="${f.id}">${esc(f.name)} · ${f.cnt}</button>`).join('')}
+      </div>
+      <div id="mlist">${mealList()}</div>
+      <div class="hint" style="margin:0 4px 8px">Ovqat berilganda bolaning «+» tugmasini bosing — bir kunda ikki mahal.
+        Xato qo'yilgan bo'lsa, «✓» ni qayta bosing: o'chirishdan oldin so'raladi. O'tgan kunlarni ◀ bilan oching.</div>`;
+    const q = $('#q');
+    q.addEventListener('input', () => { S.q = q.value; $('#mlist').innerHTML = mealList(); });
+  }
+
+  const mealHold = new Map();   // tasodifiy ikki marta bosilsa — darrov o'chirish so'ralmasin
+  /** Belgini qo'yish yoki (so'rab) o'chirish. O'zgargan bo'lsa natijani qaytaradi. */
+  async function toggleMeal(sid, date, m, on) {
+    const key = `${sid}.${date}.${m}`;
+    if (on) {
+      if (Date.now() - (mealHold.get(key) || 0) < 900) return null;
+      const dd = date ? `${date.slice(8, 10)}.${date.slice(5, 7)}` : 'bugun';
+      if (!await askOk(`${studentName(sid)}\n${dd} · ${m}-mahal ovqat belgisini o'chirasizmi?\nO'chirilgani tarixda saqlanib qoladi.`, "🗑 Ha, o'chirilsin")) return null;
+      try { const r = await api('DELETE', `/meal/${sid}/${date}/${m}`); haptic('warning'); return { ...r, on: false }; }
+      catch (e) { fail(e); return null; }
+    }
+    try {
+      const r = await api('POST', '/meal', { student_id: sid, date: date || undefined, meal: m });
+      mealHold.set(`${sid}.${r.date}.${m}`, Date.now());
+      tapFeel();
+      if (r.late) toast(`⏪ ${r.name}: ${r.date.slice(8, 10)}.${r.date.slice(5, 7)} · ${m}-mahal keyin yozildi`);
+      return { ...r, on: true };
+    } catch (e) { fail(e); return null; }
+  }
+
+  async function mealTap(el) {
+    const sid = +el.dataset.id, m = +el.dataset.m, on = el.classList.contains('on');
+    // bugungi ro'yxatda sana yuborilmaydi: yarim tundan keyin ham belgi to'g'ri kunga tushadi
+    const r = await toggleMeal(sid, on || S.mday ? S.md.date : null, m, on);
+    if (!r) return;
+    if (r.date !== S.md.date) { render(); return; }   // kun almashgan — ro'yxatni yangilash
+    const d = S.md;
+    const old = d.marks[sid] || 0;
+    d.marks[sid] = r.on ? old | m : old & ~m;
+    d[`m${m}`] += r.on ? 1 : -1;
+    const btn = $(`#mlist .mbtn[data-id="${sid}"][data-m="${m}"]`);
+    if (btn) btn.outerHTML = mealBtn(sid, m, r.on);
+    mealSums();
   }
 
   // ------------------------------------------------------------ 💵 TO'LOV
@@ -302,13 +417,7 @@
 
   function renderPay() {
     const st = S.st, c = st.counts;
-    if (!st.floors.length) {
-      view.innerHTML = `<div class="card"><h3>👋 Xush kelibsiz!</h3>
-        <p class="hint">Boshlash uchun «Bolalar» bo'limida avval etajlarni, keyin bolalarni qo'shing.</p>
-        <p class="hint">Ma'lumotlar sizning Telegram akkauntingizda saqlanadi — telefon almashsa ham yo'qolmaydi.</p>
-        <button class="btn" data-act="gotab" data-tab="kids">👥 Bolalar bo'limiga o'tish</button></div>`;
-      return;
-    }
+    if (!st.floors.length) { view.innerHTML = WELCOME; return; }
     const stat = (key, n, label) => `<button class="stat ${S.filter === key ? 'sel' : ''}" data-act="filter" data-f="${key}">`
       + `<b class="${key === 'exempt' ? 'gray' : key}">${n}</b><span>${label}</span></button>`;
     view.innerHTML = `
@@ -395,6 +504,28 @@
   if (tgAtLeast('6.1')) try { tg.BackButton.onClick(closeSheet); } catch (e) {}
 
   // ------------------------------------------------------------ bola kartochkasi
+  /** Shu haftaning ovqat jadvali: 7 kun × 2 mahal. Katakni bosib keyin ham yozish/o'chirish mumkin. */
+  function mealCard(d, id) {
+    const ml = d.meals;
+    const cell = (w, m) => {
+      if (!w.cells) return '<span class="mg-c off"></span>';
+      const v = w.cells[m - 1];
+      return `<button class="mg-c ${v}" data-act="mcell" data-id="${id}" data-date="${w.date}" data-m="${m}" data-on="${v ? 1 : 0}"`
+        + ` aria-label="${w.d} ${m}-mahal${v ? ' berildi' : ''}">${v ? '✓' : '+'}</button>`;
+    };
+    let h = `<div class="section-title">🍽 Ovqat — bu hafta</div><div class="card"><div class="mgrid">
+      <span></span>${ml.week.map(w => `<span class="mg-h${w.today ? ' today' : ''}">${w.wd}<small>${w.d}</small></span>`).join('')}
+      ${[1, 2].map(m => `<span class="mg-l">${m}-m</span>${ml.week.map(w => cell(w, m)).join('')}`).join('')}
+    </div>
+    <div class="hint" style="margin-top:8px">Bu hafta: <b>${ml.week_count}</b> marta · Bu oy: <b>${ml.month_count}</b> marta</div>`;
+    if (ml.week.some(w => w.cells && w.cells.includes('late'))) h += '<div class="hint"><span class="late-key">✓</span> — keyin yozilgan</div>';
+    if (ml.log.length) {
+      h += ml.log.map(e => `<div class="sub ${e.k === 'mdel' ? 'fix' : ''}" style="margin-top:4px">${e.k === 'mdel' ? '🗑' : '⏪'} ${esc(e.date)} · ${e.meal}-mahal — `
+        + `${e.k === 'mdel' ? "o'chirildi" : 'keyin yozildi'} ${esc(shortAt(e.at))}${devTag(e.dev)}</div>`).join('');
+    }
+    return h + '</div>';
+  }
+
   async function openStudent(id, keepScroll) {
     let d;
     try { d = await api('GET', `/student/${id}`); } catch (e) { fail(e); return; }
@@ -434,7 +565,7 @@
       h += `<button class="btn secondary" style="margin-top:8px" data-act="exempt" data-id="${id}">`
         + `${d.exempt ? '↩️ Ozodlikni bekor qilish' : '💤 Bu hafta ozod (uyga ketgan)'}</button>`;
     }
-    h += '</div><div class="section-title">To\'lovlar tarixi</div>';
+    h += '</div>' + mealCard(d, id) + '<div class="section-title">To\'lovlar tarixi</div>';
     const editsHtml = p => p.edits.map(e => `<div class="sub fix">✏️ ${fmt(e.old)} → ${fmt(e.amount)} · ${esc(shortAt(e.at))}${devTag(e.dev)}</div>`).join('');
     h += d.payments.length
       ? `<div class="list">${d.payments.map(p => `<div class="item"><div class="grow"><div class="name">${money(p.amount)}</div>`
@@ -511,6 +642,11 @@
         <div class="kpi wide"><div class="label">${d.diff >= 0 ? '📈' : '📉'} Farq (kirim − chiqim)</div>
           <div class="value ${d.diff >= 0 ? 'ok' : 'bad'}">${d.diff > 0 ? '+' : ''}${money(d.diff)}</div></div>
       </div>`;
+    const ml = d.meals;
+    h += `<div class="card"><h3>🍽 Ovqat berildi</h3>
+        <div class="kv"><span>1-mahal</span><b>${fmt(ml.m1)} marta</b></div>
+        <div class="kv"><span>2-mahal</span><b>${fmt(ml.m2)} marta</b></div>
+        <div class="kv"><span>Jami</span><b>${fmt(ml.total)} marta</b></div></div>`;
     if (d.by_cat.length) {
       h += `<div class="card"><h3>Xarajatlar toifalar bo'yicha</h3>${d.by_cat.map(c => `<div class="bar-row">`
         + `<div class="row between"><span>${esc(c.name)}</span><b>${fmt(c.total)}</b></div>`
@@ -579,7 +715,10 @@
       `xarajat · ${esc(i.spent)}${i.desc ? ' · ' + esc(i.desc) : ''}${i.at ? ' · kiritildi ' + esc(shortAt(i.at)) : ''}`],
     edel: i => [`🗑 ${esc(i.name)} — <s>${fmt(i.amount)}</s>`,
       `xarajat o'chirildi${i.at ? ' ' + esc(i.at) : ''} · ${esc(i.spent)}`],
+    mlate: i => [`🍽 ${esc(i.name)} — ${esc(i.date)} · ${i.meal}-mahal`, `ovqat keyin yozildi ${esc(i.at)}`],
+    mdel: i => [`🍽 ${esc(i.name)} — <s>${esc(i.date)} · ${i.meal}-mahal</s>`, `ovqat belgisi o'chirildi ${esc(i.at)}`],
   };
+  const FIX_KINDS = ['pedit', 'pdel', 'edel', 'mdel'];
 
   async function openJournal(keepScroll) {
     let d;
@@ -589,11 +728,12 @@
         <button class="chip ${S.jr.only ? 'sel' : ''}" data-act="jronly" data-v="1">Faqat tuzatishlar · ${d.fixes}</button>
       </div>
       <div class="hint" style="margin:0 4px 10px">Har bir to'lov, o'zgartirish va o'chirish sana-vaqti hamda qurilmasi bilan
-        shu yerda saqlanadi. Boshqa qurilmadan qilingan amallar <span class="other-dev">ajratib</span> ko'rsatiladi.</div>`;
+        shu yerda saqlanadi. Ovqat belgilaridan — keyin yozilgani va o'chirilgani. Boshqa qurilmadan qilingan amallar
+        <span class="other-dev">ajratib</span> ko'rsatiladi.</div>`;
     h += d.items.length
       ? `<div class="list">${d.items.map(i => {
         const [title, sub] = JR[i.k](i);
-        const fix = i.k === 'pedit' || i.k === 'pdel' || i.k === 'edel';
+        const fix = FIX_KINDS.includes(i.k);
         return `<div class="item${fix ? ' fixrow' : ''}"><div class="grow"><div class="name">${title}</div>`
           + `<div class="sub">${sub}${devTag(i.dev)}</div></div></div>`;
       }).join('')}</div>`
@@ -689,7 +829,7 @@
         <div class="kv" style="margin-top:8px"><span>Holat</span><b id="sync-full">${esc(SYNC_TXT[S.sync]()[1])}</b></div>
         <div class="kv"><span>Telegram xotirasi</span><b>${u.percent ? u.percent + '% band' : "1% dan kam band"}</b></div>
         <div class="bar"><i style="width:${Math.max(2, u.percent)}%"></i></div>
-        <div class="hint" style="margin-top:6px">300 ta bolaning 2 yillik hisobi taxminan 20% joy oladi.</div>
+        <div class="hint" style="margin-top:6px">300 ta bolaning 2 yillik hisobi (to'lov, xarajat, kuniga 2 mahal ovqat) taxminan 25% joy oladi.</div>
         <button class="btn secondary" style="margin-top:10px" data-act="pull">🔄 Bulutdan qayta yuklash</button>
       </div>
       <div class="card"><h3>🎨 Ko'rinish</h3>
@@ -702,7 +842,8 @@
       <div class="card"><h3>📜 Nazorat</h3>
         <div class="kv"><span>Bu qurilma</span><b>${esc(devLabel(S.device) || "noma'lum")}</b></div>
         <div class="hint" style="margin:6px 0 10px">Har bir to'lov, o'zgartirish va o'chirish qaysi qurilmadan qilingani bilan
-          saqlanadi. Boshqa telefon yoki kompyuterdan o'zgartirilsa, tarixda ajralib ko'rinadi.</div>
+          saqlanadi. Ovqat belgilaridan keyin yozilgani va o'chirilgani ham. Boshqa telefon yoki kompyuterdan
+          o'zgartirilsa, tarixda ajralib ko'rinadi.</div>
         <button class="btn secondary" data-act="journal">📜 O'zgarishlar tarixi</button>
       </div>`;
   }
@@ -715,6 +856,15 @@
     floorgo: el => { S.floor = +el.dataset.id; S.filter = 'all'; S.q = ''; switchTab('pay'); },
 
     open: el => openStudent(+el.dataset.id),
+    meal: el => mealTap(el),
+    mday: el => { S.mday = el.dataset.d || null; window.scrollTo(0, 0); renderMeal(); },
+    mcell: async el => {
+      const sid = +el.dataset.id;
+      const r = await toggleMeal(sid, el.dataset.date, +el.dataset.m, el.dataset.on === '1');
+      if (!r) return;
+      await openStudent(sid, true);
+      if (S.tab === 'meal') renderMeal();
+    },
     quickpay: el => payNow(+el.dataset.id, S.st.fee, el),
     pay: el => payNow(+el.dataset.id, +el.dataset.amt, el),
     paycustom: el => {
@@ -944,7 +1094,13 @@
     // eski, uzilib qolgan yozuvlardan qolgan bo'laklarni tinch tozalash
     setTimeout(() => store.serial(() => store.gc()).catch(() => {}), 4000);
     // ilovaga qaytilganda boshqa qurilmadagi o'zgarishlarni olish
-    const onBack = () => { pullIfChanged(false).catch(() => {}); };
+    const onBack = () => {
+      pullIfChanged(false).catch(() => {});
+      // ertasi kuni ochilsa — "Bugun" ro'yxati yangi kunga o'tadi
+      if (S.tab === 'meal' && !S.mday && S.md) {
+        try { if (db.api('GET', '/meals').date !== S.md.date) renderMeal(); } catch (e) { /* keyinroq */ }
+      }
+    };
     if (tgAtLeast('8.0')) try { tg.onEvent('activated', onBack); } catch (e) {}
     document.addEventListener('visibilitychange', () => { if (!document.hidden) onBack(); });
   }

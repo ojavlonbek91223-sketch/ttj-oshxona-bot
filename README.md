@@ -20,7 +20,17 @@ Server kerak emas, pul to'lanmaydi, hech qachon "uxlab" qolmaydi.
 - **Hisob-kitob** telefonning o'zida bajariladi (`docs/logic.js`); u server versiyasi bilan aynan bir xil
   ishlashi `tests/crosscheck.py` bilan tekshirilgan.
 - **Sig'im:** Telegram har bir akkauntga 1024 ta yozuv × 4 KB beradi. 300 ta bolaning 2 yillik hisobi
-  ~20% joy oladi (`node tests/store_test.js`). Band joy ⚙️ Sozlama bo'limida ko'rinadi.
+  (to'lov, xarajat, kuniga 2 mahal ovqat) ~22% joy oladi (`node tests/store_test.js`). Band joy ⚙️ Sozlama bo'limida ko'rinadi.
+
+**🍽 Ovqat (kuniga ikki mahal):**
+- Ilova «🍽 Ovqat» bo'limida ochiladi. Ovqat berilganda bolaning **«+»** tugmasi bosiladi — 1-mahal va 2-mahal
+  alohida. Bir bolaga bir kunda **ikki mahaldan ortiq** yozilmaydi.
+- Esdan chiqqan bo'lsa — **keyin yozsa bo'ladi**: ◀ bilan o'tgan kunni (30 kungacha) ochib «+» bosiladi yoki
+  bolaning kartochkasidagi haftalik jadvaldan. Keyin yozilgani vaqti va qurilmasi bilan saqlanadi.
+- Xato qo'yilgan «✓» qayta bosilsa, o'chirishdan oldin so'raladi; o'chirilgani 📜 O'zgarishlar tarixida qoladi.
+- 📊 Hisobotda hafta/oy bo'yicha nechta ovqat berilgani ko'rinadi.
+- Bulut formati 2-versiya (`root.v = 2`, yangi `o`, `k` oqimlari). Keshda qolgan eski ilova bu ma'lumotni ochmaydi
+  va ustidan yozmaydi — «ilovani yangilang» deydi.
 
 **To'lov qoidalari va nazorat:**
 - Bir bolaga **bir haftada bitta to'lov** qabul qilinadi. Xato bo'lsa — o'sha to'lov ✏️ o'zgartiriladi yoki 🗑 o'chiriladi.
@@ -248,7 +258,7 @@ docs/           — SERVERSIZ ilova (GitHub Pages): index.html, app.js (ekranlar
                   logic.js (hisob-kitob), store.js (Telegram bulutiga saqlash), style.css
 brand/          — logotip: logo-qozon.svg (asl nusxa), .png/.jpg (bot rasmi, 640×640), boshqa variantlar
 tests/crosscheck.py — logic.js ni db.py + webserver.py bilan 1500 ta tasodifiy amalda solishtiradi (Node.js kerak)
-tests/logic_test.js — haftada bitta to'lov, to'lovni o'zgartirish/o'chirish tarixi, qurilma (node tests/logic_test.js)
+tests/logic_test.js — haftada bitta to'lov, to'lov tarixi, qurilma, kuniga 2 mahal ovqat (node tests/logic_test.js)
 tests/store_test.js — bulutga saqlash: 2 yillik hajm, internet uzilishi, ikki qurilma (node tests/store_test.js)
 
 bot.py          — ishga tushirish, dispatcher

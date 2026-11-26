@@ -95,4 +95,84 @@ old.load({
 const os = old.api('GET', '/student/1');
 check(os.paid === 90000 && os.removed.length === 1 && os.removed[0].at === '', "eski formatdagi ma'lumot to'g'ri ochiladi");
 
+// ================================================= ovqat: kuniga ikki mahal "+"
+{
+  let t = Date.UTC(2026, 10, 26, 7, 0, 0);   // 26.11.2026 12:00, payshanba
+  L.setClock(() => t);
+  const m = L.createDb();
+  m.setDevice('a3f9k');
+  m.api('POST', '/floors', { text: '1' });
+  m.api('POST', '/students', { floor_id: 1, text: 'Aliyev Vali\nKarimov Sardor\nToshmatov Jasur' });
+
+  const r = m.api('POST', '/meal', { student_id: 1, meal: 1 });
+  check(r.date === '2026-11-26' && !r.late && r.day_count === 1, "1-mahal ovqat yozildi (bugun, o'z vaqtida)");
+  check(m.api('POST', '/meal', { student_id: 1, meal: 2 }).day_count === 2, '2-mahal ham yozildi');
+  e = err(() => m.api('POST', '/meal', { student_id: 1, meal: 1 }));
+  check(e && e.status === 409 && e.message.includes('allaqachon'), "bir mahalga ikki marta yozilmaydi", e && e.message);
+  check(!!err(() => m.api('POST', '/meal', { student_id: 1, meal: 3 })), "3-mahal yo'q — kuniga faqat ikki mahal");
+  check(!!err(() => m.api('POST', '/meal', { student_id: 1, meal: 1, date: '2026-11-27' })), "ertangi kunga yozilmaydi");
+  check(!!err(() => m.api('POST', '/meal', { student_id: 1, meal: 1, date: '2026-10-26' })), '30 kundan eski kunga yozilmaydi');
+
+  // esidan chiqqan bo'lsa — keyin yozish (boshqa telefondan)
+  m.setDevice('i77qp');
+  const lt = m.api('POST', '/meal', { student_id: 2, meal: 1, date: '2026-11-25' });
+  check(lt.late === true, "kechagi ovqatni bugun keyin yozsa bo'ladi");
+  const day = m.api('GET', '/meals');
+  check(day.m1 === 1 && day.m2 === 1 && day.marks[1] === 3 && day.active === 3 && day.rel === 'Bugun'
+    && day.label === '26-noyabr, payshanba' && day.next === null && day.prev === '2026-11-25', "bugungi ro'yxat: kimga qaysi mahal berilgani");
+  const yd = m.api('GET', '/meals?d=2026-11-25');
+  check(yd.m1 === 1 && yd.marks[2] === 1 && yd.rel === 'Kecha' && yd.next === '2026-11-26', "kechagi ro'yxatda keyin yozilgani bor");
+
+  // xato qo'yilganini o'chirish
+  t += 10 * MIN;
+  m.api('DELETE', '/meal/1/2026-11-26/2');
+  check(err(() => m.api('DELETE', '/meal/1/2026-11-26/2')).status === 404, "o'chirilgan belgini qayta o'chirib bo'lmaydi");
+  check(!err(() => m.api('POST', '/meal', { student_id: 1, meal: 2 })), "o'chirilgandan keyin qayta yozsa bo'ladi");
+  m.api('DELETE', '/meal/1/2026-11-26/2');
+
+  const card = m.api('GET', '/student/2').meals;
+  check(card.week.length === 7 && card.week[2].cells[0] === 'late' && card.week[3].today && card.week[4].cells === null
+    && card.week_count === 1 && card.log[0].k === 'mlate' && card.log[0].dev === 'i77qp' && card.log[0].date === '25.11',
+  'kartochkada haftalik jadval: keyin yozilgani ajralib turadi, qaysi qurilmadan');
+  const jr = m.api('GET', '/journal');
+  check(jr.items.map(i => i.k).join(',') === 'mdel,mdel,mlate', "tarixda o'chirilgan va keyin yozilgan belgilar (o'z vaqtidagilar emas)",
+    jr.items.map(i => i.k).join(','));
+  check(jr.items[0].name === 'Aliyev Vali' && jr.items[0].date === '26.11' && jr.items[0].meal === 2 && jr.items[0].at === '26.11.2026 12:10',
+    "tarixda: kim, qaysi kun, qaysi mahal, qachon o'chirildi");
+  check(m.api('GET', '/journal?only=fix').fixes === 2, "o'chirilgan ovqat belgisi «tuzatish» hisoblanadi");
+
+  const rep = m.api('GET', '/report?k=w&o=0');
+  check(rep.meals.m1 === 2 && rep.meals.m2 === 0 && rep.meals.total === 2, 'hisobotda haftalik ovqat soni');
+  check(m.reportText('w', 0).includes('🍽 Ovqat: 1-mahal 2, 2-mahal 0'), 'nusxalanadigan hisobotda ham bor');
+
+  m.api('POST', '/student/2/leave');
+  check(err(() => m.api('DELETE', '/student/2')).message.includes('ovqat'), "ovqat yozilgan bolani butunlay o'chirib bo'lmaydi");
+  check(err(() => m.api('POST', '/meal', { student_id: 2, meal: 2 })).message.includes('chiqib ketgan'), 'chiqib ketgan bolaga ovqat yozilmaydi');
+  check(!err(() => m.api('DELETE', '/meal/2/2026-11-25/1')) && m.api('GET', '/student/2').can_delete, "belgisi o'chirilsa — bolani o'chirsa bo'ladi");
+
+  // saqlab-qayta yuklash
+  const snap = x => JSON.stringify([x.api('GET', '/meals'), x.api('GET', '/meals?d=2026-11-25'), x.api('GET', '/student/1'),
+    x.api('GET', '/student/2'), x.api('GET', '/journal'), x.api('GET', '/report?k=m&o=0')]);
+  const m2 = L.createDb();
+  m2.load(JSON.parse(JSON.stringify(m.streams())));
+  check(snap(m) === snap(m2), "ovqat belgilari va tarixi saqlab-qayta yuklangandan keyin bir xil");
+
+  t += Date.UTC(2026, 10, 27, 1) - t;      // ertasi kuni ertalab
+  const nd = m2.api('GET', '/meals');
+  check(nd.date === '2026-11-27' && nd.m1 === 0 && m2.api('GET', '/meals?d=2026-11-26').m1 === 1, "ertasi kuni ro'yxat bo'sh, kechagisi joyida");
+  check(m2.api('GET', '/student/1').meals.week[3].cells[0] === 'on', "kechagi o'z vaqtidagi belgi «keyin yozilgan» bo'lib qolmaydi");
+
+  // ixcham saqlash: tasodifiy to'plamlar to'g'ri tiklanadi
+  let ok = true;
+  for (let n = 0; n < 300; n++) {
+    const s = new Set();
+    for (let i = Math.floor(Math.random() * 400); i > 0; i--) s.add(1 + Math.floor(Math.random() * 1500));
+    const back = L._t.unpackSet(L._t.packSet(s));
+    if (back.size !== s.size || [...s].some(x => !back.has(x))) { ok = false; break; }
+  }
+  check(ok, "bolalar to'plami ixcham yozilib, aynan tiklanadi (300 ta tasodifiy sinov)");
+  const all = new Set(Array.from({ length: 300 }, (_, i) => i + 1));
+  check(L._t.packSet(all).length < 60, `300 bolalik bir mahal ${L._t.packSet(all).length} belgida saqlanadi`);
+}
+
 console.log("\n✅ Yangi qoidalar sinovi o'tdi");

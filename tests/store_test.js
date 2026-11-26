@@ -11,7 +11,7 @@ function check(cond, what, extra = '') {
   console.log(`✅ ${what}`);
 }
 const memKv = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; };
-const same = (a, b) => a.c === b.c && a.p === b.p && a.e === b.e;
+const same = (a, b) => ['c', 'p', 'e', 'o', 'k'].every(k => (a[k] || '') === (b[k] || ''));
 
 let now = Date.UTC(2026, 8, 1, 3, 0, 0);
 L.setClock(() => now);
@@ -26,7 +26,7 @@ async function freshLoad(backend) {
 }
 
 async function volume() {
-  // 300 bola, 9 etaj, 2 yil: har hafta har bola to'laydi, har kuni 1–2 xarajat; har kuni oxirida saqlanadi.
+  // 300 bola, 9 etaj, 2 yil: har hafta har bola to'laydi, har kuni 2 mahal ovqat, 1 xarajat; har kuni oxirida saqlanadi.
   const backend = S.memoryBackend();
   const store = S.createStore(backend, { kv: memKv() });
   const db = L.createDb();
@@ -46,6 +46,10 @@ async function volume() {
       for (const sid of sids) { now += 7000; db.api('POST', '/pay', { student_id: sid, amount: 90000 }); }
     }
     db.api('POST', '/expenses', { category: L.CATEGORIES[day % 12], amount: 150000 + day, description: `${day}-kun xaridi` });
+    for (const sid of sids) {   // ovqat: har kuni ikki mahal, ba'zilar kelmagan
+      if ((sid * 7 + day) % 20) db.api('POST', '/meal', { student_id: sid, meal: 1 });
+      if ((sid * 3 + day) % 20) db.api('POST', '/meal', { student_id: sid, meal: 2 });
+    }
     const r = await store.commit(db.streams());
     commits++;
     sumWrites += r.writes;
@@ -53,7 +57,7 @@ async function volume() {
   }
   const u = store.usage();
   const c = db.counts();
-  console.log(`   2 yil: ${c.payments} to'lov, ${c.expenses} xarajat → ${u.keys} kalit (${u.percent}%), ${(u.bytes / 1024).toFixed(0)} KB`);
+  console.log(`   2 yil: ${c.payments} to'lov, ${c.expenses} xarajat, ${c.meals} ovqat belgisi → ${u.keys} kalit (${u.percent}%), ${(u.bytes / 1024).toFixed(0)} KB`);
   console.log(`   har saqlashda o'rtacha ${(sumWrites / commits).toFixed(1)} ta yozuv, eng ko'pi ${maxWrites} (300 ta to'lovli kun)`);
   check(u.keys < 1024 * 0.5, "300 bola × 2 yil Telegram xotirasining yarmiga ham yetmaydi");
   check(backend.map.size === u.keys, "bulutda ortiqcha (yetim) kalit qolmagan", `${backend.map.size} vs ${u.keys}`);
@@ -66,6 +70,21 @@ async function volume() {
   const r = await store.commit(db.streams());
   console.log(`   bitta to'lov: ${r.writes} ta yangi bo'lak + root, ${r.removed} ta eski o'chirildi`);
   check(r.writes <= 3, "bitta to'lov bulutga 1–3 ta bo'lak yozadi (hammasini emas)");
+
+  // bitta ovqat belgisi va o'tgan kunga keyin yozilgan belgi — nechta yozuv?
+  now += DAY;
+  db.api('POST', '/meal', { student_id: sids[7], meal: 1 });
+  const rm = await store.commit(db.streams());
+  check(rm.writes <= 3, `bitta ovqat belgisi ${rm.writes} ta bo'lak yozadi`);
+  const back = new Date(now - 10 * DAY + 5 * 3600000).toISOString().slice(0, 10);
+  const fed = +Object.keys(db.api('GET', `/meals?d=${back}`).marks)[0];
+  db.api('DELETE', `/meal/${fed}/${back}/1`);
+  db.api('POST', '/meal', { student_id: fed, meal: 1, date: back });
+  const rl = await store.commit(db.streams());
+  check(rl.writes <= 5, `10 kun oldingi ovqatni tuzatish ${rl.writes} ta bo'lak yozadi`);
+  const again = await freshLoad(backend);
+  check(same(again.data, db.streams()), "ovqat belgilari bilan ham yangi qurilmada aynan bir xil");
+  check(JSON.parse(backend.map.get('root')).v === 2, "bulut 2-versiyada (eski ilova bu ma'lumot ustidan yozmaydi)");
   return { backend, store, db };
 }
 

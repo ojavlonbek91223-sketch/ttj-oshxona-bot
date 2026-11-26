@@ -17,7 +17,9 @@
   const CHUNK_BYTES = 4000;
   const MAX_KEYS = 1024;
   const MAX_VALUE = 4096;
-  const STREAMS = ['c', 'e', 'p'];
+  const STREAMS = ['c', 'e', 'p', 'o', 'k'];   // o, k — ovqat belgilari (2-versiyadan)
+  const ROOT_V = 2;   // 1-versiyali eski ilova o, k ni bilmaydi: u bu ma'lumotni ochmaydi va ustidan yozmaydi
+  const emptyLists = () => Object.fromEntries(STREAMS.map(s => [s, []]));
   const BATCH = 50;       // getItems bir so'rovda nechta kalit
   const PARALLEL = 4;     // bir vaqtda nechta setItem
   const GC_AGE = 10 * 60 * 1000;
@@ -67,7 +69,7 @@
   }
 
   function parseManifest(text) {
-    const lists = { c: [], e: [], p: [] };
+    const lists = emptyLists();
     for (const part of text.split(';')) {
       const [s, hs] = part.split(':');
       if (s in lists) lists[s] = hs ? hs.split(',').map(h => 'd_' + h) : [];
@@ -129,14 +131,14 @@
       const v = (await backend.get(['root'])).root;
       if (!v) return null;
       const r = JSON.parse(v);
-      if (r.v !== 1) throw new Error("Ma'lumot yangi versiyada saqlangan — ilovani yangilang");
+      if (r.v !== 1 && r.v !== ROOT_V) throw new Error("Ma'lumot yangi versiyada saqlangan — ilovani yangilang");
       return r;
     }
 
     /** Qaysi bo'laklar borligini o'qish (root + manifest). Ma'lumotning o'zi emas. */
     async function loadIndex() {
       const r = await readRoot();
-      if (!r) return { rev: 0, cid: '', lists: { c: [], e: [], p: [] }, mKeys: [], bytes: 0 };
+      if (!r) return { rev: 0, cid: '', lists: emptyLists(), mKeys: [], bytes: 0 };
       const mKeys = r.m.map(h => 'm_' + h);
       const mv = await getMany(mKeys);
       const lists = parseManifest(mKeys.map(k => need(mv, k)).join(''));
@@ -188,7 +190,7 @@
 
       await pool([...writes], PARALLEL, ([k, v]) => backend.set(k, v));
       const r = {
-        v: 1, rev: (remote ? remote.rev : 0) + 1, cid: randomId(), t: now(),
+        v: ROOT_V, rev: (remote ? remote.rev : 0) + 1, cid: randomId(), t: now(),
         m: mKeys.map(k => k.slice(2)), b: bytes, k: next.size,
       };
       await backend.set('root', JSON.stringify(r));

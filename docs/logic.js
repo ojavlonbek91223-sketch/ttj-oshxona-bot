@@ -3,10 +3,12 @@
  * Server versiyasidagi db.py + webserver.py bilan bir xil natija beradi:
  * tests/crosscheck.py ikkalasini bir xil amallar bilan solishtiradi.
  *
- * Ma'lumot uchta "oqim" (matn) ko'rinishida saqlanadi (store.js ularni Telegram bulutiga yozadi):
+ * Ma'lumot bir necha "oqim" (matn) ko'rinishida saqlanadi (store.js ularni Telegram bulutiga yozadi):
  *   c — asosiy: etajlar, bolalar, haftalik to'lov tarixi, boshlang'ich kassa
  *   p — to'lovlar jurnali, har qator:  id,bola_id,summa,vaqt36   yoki  -id (o'chirilgan)
  *   e — xarajatlar jurnali, har qator: [id,"toifa",summa,"YYYY-MM-DD","izoh"]  yoki  -id
+ *   o — ovqat belgilari: har kun bitta qator  kun36:1-mahal:2-mahal  (bolalar to'plami ixcham ko'rinishda)
+ *   k — ovqat nazorati: keyin yozilgan va o'chirilgan belgilar (vaqti va qurilmasi bilan)
  * Jurnallarga faqat oxiridan qo'shiladi — bulutga har safar faqat oxirgi bo'lak yoziladi.
  */
 (function (root, factory) {
@@ -28,6 +30,10 @@
     "🔥 Gaz, ko'mir, o'tin", "🧽 Xo'jalik buyumlari", "🚕 Yo'l kira", '📦 Boshqa',
   ];
   const ICON = { ok: '✅', part: '🟡', bad: '❌', exempt: '💤' };
+  const WEEKDAYS = ['dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba', 'yakshanba'];
+  const WD_SHORT = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
+  const MEALS_PER_DAY = 2;
+  const MEAL_BACK_DAYS = 30;               // necha kun oldingi ovqatni keyin yozish mumkin
 
   class ApiError extends Error {
     constructor(message, status = 400) { super(message); this.status = status; }
@@ -63,6 +69,33 @@
   }
   function validIso(s) {
     return /^\d{4}-\d{2}-\d{2}$/.test(s) && dayIso(isoDay(s)) === s;
+  }
+  const weekdayOf = n => (((n + 3) % 7) + 7) % 7;   // 0 — dushanba
+  /** '2026-11-26' -> '26-noyabr, payshanba' */
+  const dayLabel = iso => `${+iso.slice(8, 10)}-${MONTHS[+iso.slice(5, 7)]}, ${WEEKDAYS[weekdayOf(isoDay(iso))]}`;
+  const shortDate = iso => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+
+  /* Bolalar to'plami -> ixcham matn: har belgi 6 ta bolani bildiradi (bit), boshida nechanchi guruhdan boshlangani.
+   * 300 bola ≈ 55 belgi, shuning uchun 2 yillik ovqat hisobi ham Telegram xotirasining oz qismini oladi. */
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  function packSet(set) {
+    if (!set.size) return '';
+    const ids = [...set].sort((a, b) => a - b);
+    const start = Math.floor(ids[0] / 6);
+    const vals = new Array(Math.floor(ids[ids.length - 1] / 6) - start + 1).fill(0);
+    for (const id of ids) vals[Math.floor(id / 6) - start] |= 1 << (id % 6);
+    return start.toString(36) + '.' + vals.map(v => B64[v]).join('');
+  }
+  function unpackSet(str) {
+    const out = new Set();
+    if (!str) return out;
+    const [st, body = ''] = str.split('.');
+    const start = parseInt(st, 36);
+    for (let i = 0; i < body.length; i++) {
+      const v = B64.indexOf(body[i]);
+      for (let b = 0; b < 6; b++) if (v & (1 << b)) out.add((start + i) * 6 + b);
+    }
+    return out;
   }
   function fmtDt(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):\d{2}$/.exec(s || '');
@@ -182,6 +215,10 @@
       return {
         cash: 0, fees: [[FIRST_WEEK, DEFAULT_FEE]], floors: [], students: [], seqF: 0, seqS: 0,
         pay: new Map(), exp: new Map(), payLog: [], expLog: [], maxP: 0, maxE: 0, events: [],
+        meals: new Map(),     // kun raqami -> [null, Set(1-mahal bolalari), Set(2-mahal bolalari)]
+        mealLine: new Map(),  // kun -> saqlanadigan qator (o'zgarmagan kunlar qayta hisoblanmaydi)
+        late: new Map(),      // "kun.mahal.bola" -> {at, dev}: keyin yozilgan belgilar
+        mealLog: [],          // k oqimi qatorlari
       };
     }
     D = empty();
@@ -202,7 +239,28 @@
       }
       for (const line of lines(st && st.p)) { d.payLog.push(line); applyPay(d, line); }
       for (const line of lines(st && st.e)) { d.expLog.push(line); applyExp(d, line); }
+      for (const line of lines(st && st.o)) {
+        const [d36, a, b] = line.split(':');
+        const day = parseInt(d36, 36);
+        if (day > 0) d.meals.set(day, [null, unpackSet(a), unpackSet(b)]);
+      }
+      for (const line of lines(st && st.k)) { d.mealLog.push(line); applyMealAudit(d, line); }
       D = d;
+    }
+
+    /* Ovqat nazorati (k oqimi), har qator bitta voqea:
+     *   +bola36,kun36,mahal,vaqt36[,qurilma]   — o'tgan kun uchun keyin yozildi
+     *   -bola36,kun36,mahal,vaqt36[,qurilma]   — belgi o'chirildi
+     * Belgilarning o'zi o oqimida; bu yerda faqat "kim, qachon, qaysi qurilmadan" saqlanadi. */
+    function applyMealAudit(d, line) {
+      const [sid36, d36, m, t, dev = ''] = line.slice(1).split(',');
+      const sid = parseInt(sid36, 36), day = parseInt(d36, 36), meal = +m;
+      if (!(sid > 0 && day > 0 && (meal === 1 || meal === 2) && t)) return;
+      const key = `${day}.${meal}.${sid}`;
+      const ev = { k: line[0] === '-' ? 'mdel' : 'mlate', s: 'o', n: d.mealLog.length, sid, day, meal, at: unpackTime(t), dev };
+      if (ev.k === 'mdel') d.late.delete(key);
+      else d.late.set(key, { at: ev.at, dev });
+      d.events.push(ev);
     }
 
     /* To'lovlar jurnali — har qator bitta voqea (o'chirilgan/o'zgartirilgani ham saqlanib qoladi):
@@ -254,6 +312,21 @@
     const devTail = () => (device ? ',' + device : '');
     function logPay(line) { D.payLog.push(line); applyPay(D, line); }
     function logExp(line) { D.expLog.push(line); applyExp(D, line); }
+    function logMealAudit(line) { D.mealLog.push(line); applyMealAudit(D, line); }
+
+    function mealsStream() {
+      const out = [];
+      for (const day of [...D.meals.keys()].sort((a, b) => a - b)) {
+        let line = D.mealLine.get(day);
+        if (line === undefined) {
+          const c = D.meals.get(day);
+          line = c[1].size || c[2].size ? `${day.toString(36)}:${packSet(c[1])}:${packSet(c[2])}` : '';
+          D.mealLine.set(day, line);
+        }
+        if (line) out.push(line);
+      }
+      return out.join('\n');
+    }
 
     function streams() {
       return {
@@ -265,6 +338,8 @@
         }),
         p: D.payLog.join('\n'),
         e: D.expLog.join('\n'),
+        o: mealsStream(),
+        k: D.mealLog.join('\n'),
       };
     }
 
@@ -416,8 +491,107 @@
       data.removed = D.events.filter(e => e.k === 'pdel' && e.sid === s.id).reverse().slice(0, 20)
         .map(e => ({ amount: e.amt, paid_at: fmtDt(e.pat), at: e.at ? fmtDt(e.at) : '', dev: e.dev }));
       data.exemptions = s.ex.slice().sort().map(weekLabel).slice(-10);
-      data.can_delete = pays.length === 0;
+      data.meals = studentMeals(s);
+      data.can_delete = pays.length === 0 && !hasAnyMeal(s.id);
       return data;
+    }
+
+    // ---------- ovqat: kuniga ikki mahal, "+" belgisi ----------
+    const hasMeal = (day, meal, sid) => { const c = D.meals.get(day); return !!(c && c[meal].has(sid)); };
+    function hasAnyMeal(sid) {
+      for (const c of D.meals.values()) if (c[1].has(sid) || c[2].has(sid)) return true;
+      return false;
+    }
+    function mealsIn(day1, day2, sid = null) {   // [day1, day2) oralig'idagi belgilar soni
+      let m1 = 0, m2 = 0;
+      for (const [day, c] of D.meals) {
+        if (day < day1 || day >= day2) continue;
+        if (sid === null) { m1 += c[1].size; m2 += c[2].size; }
+        else { if (c[1].has(sid)) m1++; if (c[2].has(sid)) m2++; }
+      }
+      return { m1, m2, total: m1 + m2 };
+    }
+
+    function studentMeals(s) {
+      const t = today(), tday = isoDay(t), ws = isoDay(weekStart());
+      const week = [];
+      for (let i = 0; i < 7; i++) {
+        const n = ws + i, iso = dayIso(n);
+        week.push({
+          date: iso, d: +iso.slice(8, 10), wd: WD_SHORT[i], today: n === tday,
+          // '' — yo'q, 'on' — o'z vaqtida, 'late' — keyin yozilgan; kelajakdagi kun — null
+          cells: n > tday ? null : [1, 2].map(m => (!hasMeal(n, m, s.id) ? '' : D.late.has(`${n}.${m}.${s.id}`) ? 'late' : 'on')),
+        });
+      }
+      const log = D.events.filter(e => e.s === 'o' && e.sid === s.id).slice(-10).reverse()
+        .map(e => ({ k: e.k, date: shortDate(dayIso(e.day)), meal: e.meal, at: fmtDt(e.at), dev: e.dev }));
+      return {
+        week, week_count: mealsIn(ws, tday + 1, s.id).total,
+        month_count: mealsIn(isoDay(monthStart(t)), tday + 1, s.id).total, log,
+      };
+    }
+
+    function mealArgs(b) {
+      const s = studentOr404(toInt(b.student_id));
+      const t = today();
+      const iso = b.date ? String(b.date) : t;
+      if (!validIso(iso)) throw new ApiError("Sana noto'g'ri");
+      if (iso > t) throw new ApiError("Hali kelmagan kunga yozib bo'lmaydi");
+      if (iso < addDays(t, -MEAL_BACK_DAYS)) throw new ApiError(`${MEAL_BACK_DAYS} kundan eski kunni o'zgartirib bo'lmaydi`);
+      const meal = toInt(b.meal, 'mahal');
+      if (meal < 1 || meal > MEALS_PER_DAY) throw new ApiError("Mahal 1 yoki 2 bo'lishi kerak");
+      return { s, iso, day: isoDay(iso), meal, late: iso !== t };
+    }
+    const auditLine = (sign, a) => `${sign}${a.s.id.toString(36)},${a.day.toString(36)},${a.meal},${packTime(nowStr())}${devTail()}`;
+
+    /** Ovqat berildi: bolaga shu kun shu mahal "+" qo'yish. Bir kunda ikki mahal — ortiq emas. */
+    function addMeal(b) {
+      const a = mealArgs(b);
+      if (!a.s.act) throw new ApiError(`${a.s.name} chiqib ketgan. Avval kartochkasida «Qaytib keldi» ni bosing.`);
+      if (hasMeal(a.day, a.meal, a.s.id)) {
+        throw new ApiError(`${a.s.name}: ${shortDate(a.iso)} ${a.meal}-mahal allaqachon yozilgan. Kuniga ${MEALS_PER_DAY} mahal.`, 409);
+      }
+      let c = D.meals.get(a.day);
+      if (!c) D.meals.set(a.day, c = [null, new Set(), new Set()]);
+      c[a.meal].add(a.s.id);
+      D.mealLine.delete(a.day);
+      if (a.late) logMealAudit(auditLine('+', a));   // o'tgan kunga keyin yozildi — vaqti va qurilmasi saqlanadi
+      return { ok: true, name: a.s.name, date: a.iso, meal: a.meal, late: a.late, day_count: (c[1].has(a.s.id) ? 1 : 0) + (c[2].has(a.s.id) ? 1 : 0) };
+    }
+
+    function removeMeal(sidRaw, iso, mealRaw) {
+      const a = mealArgs({ student_id: sidRaw, date: iso, meal: mealRaw });
+      if (!hasMeal(a.day, a.meal, a.s.id)) throw new ApiError('Bu belgi topilmadi', 404);
+      D.meals.get(a.day)[a.meal].delete(a.s.id);
+      D.mealLine.delete(a.day);
+      logMealAudit(auditLine('-', a));
+      return { ok: true, name: a.s.name, date: a.iso, meal: a.meal };
+    }
+
+    /** Bir kunlik ovqat ro'yxati: kimga qaysi mahal berildi. */
+    function getMeals(q) {
+      const t = today(), min = addDays(t, -MEAL_BACK_DAYS);
+      let iso = q.d ? String(q.d) : t;
+      if (!validIso(iso) || iso > t) iso = t;
+      if (iso < min) iso = min;
+      const day = isoDay(iso);
+      const c = D.meals.get(day);
+      const marks = {};
+      let m1 = 0, m2 = 0, active = 0;
+      for (const s of D.students) {
+        if (s.act) active++;
+        const mask = (c && c[1].has(s.id) ? 1 : 0) | (c && c[2].has(s.id) ? 2 : 0);
+        if (!mask) continue;
+        marks[s.id] = mask;
+        if (mask & 1) m1++;
+        if (mask & 2) m2++;
+      }
+      return {
+        date: iso, label: dayLabel(iso), short: shortDate(iso),
+        rel: iso === t ? 'Bugun' : iso === addDays(t, -1) ? 'Kecha' : '',
+        prev: iso > min ? addDays(iso, -1) : null, next: iso < t ? addDays(iso, 1) : null,
+        m1, m2, active, marks,
+      };
     }
 
     function pay(b) {
@@ -471,9 +645,13 @@
       const sorted = D.events.slice().sort((a, b) => cmp(when(b), when(a)) || cmp(a.s, b.s) || b.n - a.n);
       for (const e of sorted) {
         if (items.length >= limit) break;
-        if (only && (e.k === 'padd' || e.k === 'eadd')) continue;
+        if (only && (e.k === 'padd' || e.k === 'eadd' || e.k === 'mlate')) continue;
         const it = { k: e.k, at: e.at ? fmtDt(e.at) : '', amount: e.amt, dev: e.dev };
-        if (e.k[0] === 'p') {
+        if (e.s === 'o') {
+          it.name = names.get(e.sid) || '—';
+          it.date = shortDate(dayIso(e.day));
+          it.meal = e.meal;
+        } else if (e.k[0] === 'p') {
           it.name = names.get(e.sid) || '—';
           if (e.k !== 'padd') it.paid_at = fmtDt(e.pat);
           if (e.k === 'pedit') it.old = e.old;
@@ -484,7 +662,7 @@
         }
         items.push(it);
       }
-      const fixes = D.events.filter(e => e.k === 'pedit' || e.k === 'pdel' || e.k === 'edel').length;
+      const fixes = D.events.filter(e => e.k === 'pedit' || e.k === 'pdel' || e.k === 'edel' || e.k === 'mdel').length;
       return { items, total: only ? fixes : D.events.length, fixes };
     }
 
@@ -568,6 +746,7 @@
       if ([...D.pay.values()].some(p => p.sid === s.id)) {
         throw new ApiError("Bu bolaning to'lovlari bor — o'chirib bo'lmaydi. «Chiqib ketdi» qiling.");
       }
+      if (hasAnyMeal(s.id)) throw new ApiError("Bu bolaga ovqat yozilgan — o'chirib bo'lmaydi. «Chiqib ketdi» qiling.");
       D.students = D.students.filter(x => x !== s);
       return { ok: true };
     }
@@ -682,6 +861,7 @@
           .sort((a, b) => b.total - a.total || cmp(a.name, b.name)),
         status: offset === 0 ? statusCounts() : null,
         kassa: kassa(),
+        meals: mealsIn(isoDay(d1), isoDay(d2)),
       };
     }
 
@@ -753,6 +933,7 @@
         `💰 Kirim: ${money(r.income)} (${r.n_pay} ta to'lov)`,
         `🛒 Chiqim: ${money(r.expense)} (${r.n_exp} ta xarajat)`,
         `${r.diff >= 0 ? '📈' : '📉'} Farq: ${r.diff > 0 ? '+' : ''}${money(r.diff)}`];
+      if (r.meals.total) out.push(`🍽 Ovqat: 1-mahal ${r.meals.m1}, 2-mahal ${r.meals.m2} (jami ${r.meals.total} marta)`);
       if (r.by_cat.length) {
         out.push('', 'Xarajatlar:');
         for (const c of r.by_cat) out.push(`  ${c.name} — ${num(c.total)}`);
@@ -780,6 +961,9 @@
       ['DELETE', /^\/payment\/([^/]+)$/, m => deletePayment(m[1])],
       ['PATCH', /^\/payment\/([^/]+)$/, (m, b) => editPayment(m[1], b)],
       ['GET', /^\/journal$/, (m, b, q) => getJournal(q)],
+      ['GET', /^\/meals$/, (m, b, q) => getMeals(q)],
+      ['POST', /^\/meal$/, (m, b) => addMeal(b)],
+      ['DELETE', /^\/meal\/([^/]+)\/([^/]+)\/([^/]+)$/, m => removeMeal(m[1], m[2], m[3])],
       ['POST', /^\/exempt$/, (m, b) => toggleExempt(b)],
       ['POST', /^\/floors$/, (m, b) => addFloors(b)],
       ['PATCH', /^\/floor\/([^/]+)$/, (m, b) => renameFloor(m[1], b)],
@@ -823,7 +1007,10 @@
       setOnChange: fn => { onChange = fn || (() => {}); },
       setUser: u => { user = { id: u && u.id || 0, name: (u && u.name) || '' }; },
       setDevice: code => { device = /^[a-z0-9]{1,12}$/.test(code || '') ? code : ''; },
-      counts: () => ({ floors: D.floors.length, students: D.students.length, payments: D.pay.size, expenses: D.exp.size }),
+      counts: () => ({
+        floors: D.floors.length, students: D.students.length, payments: D.pay.size, expenses: D.exp.size,
+        meals: mealsIn(0, Infinity).total,
+      }),
     };
   }
 
@@ -837,6 +1024,7 @@
   return {
     createDb, ApiError, CATEGORIES, deviceLabel,
     setClock: fn => { clock = fn || (() => Date.now()); },
-    _t: { parseAmount, parseStudentLine, floorName, cleanRoom, weekStart, weekLabel, addMonths, monthLabel, packTime, unpackTime, num },
+    _t: { parseAmount, parseStudentLine, floorName, cleanRoom, weekStart, weekLabel, addMonths, monthLabel, packTime, unpackTime, num,
+      packSet, unpackSet, dayLabel },
   };
 });
